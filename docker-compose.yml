@@ -1,0 +1,88 @@
+version: '3.5'
+services:
+  postgresql:
+    image: postgres:13-alpine
+    container_name: postgresql
+    restart: always
+    ports:
+      - '5432:5432'
+    volumes:
+      - ./postgresql:/var/lib/postgresql
+      - ./postgresql/data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=gitlab
+      - POSTGRES_PASSWORD=gitlab
+      - POSTGRES_DB=gitlabhq_production
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    ports:
+      - '6379:6379'
+    volumes:
+      - ./redis:/var/lib/redis
+  nginx:
+    container_name: nginx
+    restart: always
+    image: nginx:alpine
+    ports:
+      - '443:443'
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/html:/usr/share/nginx/html
+      - ./ssl:/etc/nginx/ssl
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+  gitlab:
+    container_name: gitlab
+    restart: always
+    image: gitlab/gitlab-ce
+    depends_on:
+      - postgresql
+      - redis
+      - registry
+    volumes:
+      - ./gitlab/config:/etc/gitlab
+      - ./gitlab/logs:/var/log/gitlab
+      - ./gitlab/data:/var/opt/gitlab
+      - ./ssl:/etc/ssl/certs/gitlab
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'https://gitlabz.themall.co.th'
+        gitlab_rails['time_zone'] = 'Asia/Bangkok'
+        postgresql['enable'] = false
+        gitlab_rails['db_username'] = 'gitlab'
+        gitlab_rails['db_password'] = 'gitlab'
+        gitlab_rails['db_host'] = 'postgresql'
+        gitlab_rails['db_port'] = '5432'
+        gitlab_rails['db_database'] = 'gitlabhq_production'
+        gitlab_rails['db_adapter'] = 'postgresql'
+        gitlab_rails['db_encoding'] = 'utf8'
+        redis['enable'] = false
+        gitlab_rails['redis_host'] = 'redis'
+        gitlab_rails['redis_port'] = '6379'
+        nginx['listen_https'] = false
+        nginx['listen_port'] = 80
+        registry_external_url = 'https://registry.themall.co.th'
+        registry['enable'] = false
+        gitlab_rails['registry_enabled'] = true
+        gitlab_rails['registry_host'] = 'registry.themall.co.th'
+        gitlab_rails['registry_port'] = '443'
+        gitlab_rails['registry_api_url'] = 'http://registry:5000'
+        gitlab_rails['registry_issuer'] = 'gitlab-issuer'
+  registry:
+    image: registry:2
+    container_name: registry
+    restart: always
+    ports:
+      - '5000:5000'
+    volumes:
+      - ./gitlab/shared/registry:/registry
+      - ./ssl:/certs
+    environment:
+      - REGISTRY_LOG_LEVEL=info
+      - REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/registry
+      - REGISTRY_AUTH_TOKEN_REALM=https://gitlabz.themall.co.th/jwt/auth
+      - REGISTRY_AUTH_TOKEN_SERVICE=container_registry
+      - REGISTRY_AUTH_TOKEN_ISSUER=gitlab-issuer
+      - REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE=/certs/themall_co_th/clientcerts.crt
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
